@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'chat_message.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -10,17 +11,13 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
-  final List<ChatMessage> _messages = [];
+  final _messagesStream = Supabase.instance.client.from('messages').stream(primaryKey: ['id']).order('created_at');
 
-  void _handleSubmitted(String text) {
+  Future<void> _handleSubmitted(String text) async {
     _textController.clear();
-    ChatMessage message = ChatMessage(
-      text: text,
-      isMe: true, // For now, all messages are from "me"
-    );
-    setState(() {
-      _messages.insert(0, message);
-    });
+    if (text.isNotEmpty) {
+      await Supabase.instance.client.from('messages').insert({'content': text, 'is_me': true});
+    }
   }
 
   Widget _buildTextComposer() {
@@ -61,11 +58,29 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: <Widget>[
           Flexible(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(8.0),
-              reverse: true,
-              itemBuilder: (_, int index) => _messages[index],
-              itemCount: _messages.length,
+            child: StreamBuilder<List<Map<String, dynamic>>>(
+              stream: _messagesStream,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return const Center(child: Text('No messages yet'));
+                }
+                final messages = snapshot.data!;
+                return ListView.builder(
+                  padding: const EdgeInsets.all(8.0),
+                  reverse: true,
+                  itemCount: messages.length,
+                  itemBuilder: (_, int index) {
+                    final message = messages[index];
+                    return ChatMessage(
+                      text: message['content'] as String,
+                      isMe: message['is_me'] as bool,
+                    );
+                  },
+                );
+              },
             ),
           ),
           const Divider(height: 1.0),
