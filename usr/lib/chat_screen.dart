@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'chat_message.dart';
+import 'package:couldai_user_app/pages/splash_page.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -12,11 +13,12 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final _messagesStream = Supabase.instance.client.from('messages').stream(primaryKey: ['id']).order('created_at');
+  final _currentUser = Supabase.instance.client.auth.currentUser;
 
   Future<void> _handleSubmitted(String text) async {
     _textController.clear();
-    if (text.isNotEmpty) {
-      await Supabase.instance.client.from('messages').insert({'content': text, 'is_me': true});
+    if (text.isNotEmpty && _currentUser != null) {
+      await Supabase.instance.client.from('messages').insert({'content': text, 'user_id': _currentUser!.id});
     }
   }
 
@@ -54,6 +56,20 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Chat App'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              await Supabase.instance.client.auth.signOut();
+              if (mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const SplashPage()),
+                  (route) => false,
+                );
+              }
+            },
+          )
+        ],
       ),
       body: Column(
         children: <Widget>[
@@ -65,7 +81,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   return Center(child: Text('Error: ${snapshot.error}'));
                 }
                 if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(child: Text('No messages yet'));
+                  return const Center(child: Text('No messages yet. Be the first!'));
                 }
                 final messages = snapshot.data!;
                 return ListView.builder(
@@ -74,9 +90,11 @@ class _ChatScreenState extends State<ChatScreen> {
                   itemCount: messages.length,
                   itemBuilder: (_, int index) {
                     final message = messages[index];
+                    final userId = message['user_id'];
+                    
                     return ChatMessage(
                       text: message['content'] as String,
-                      isMe: message['is_me'] as bool,
+                      isMe: userId == _currentUser?.id,
                     );
                   },
                 );
